@@ -16,8 +16,10 @@ const SOCRATA_URL = 'https://www.datos.gov.co/resource/9cku-k5ps.json';
 
 /**
  * Search companies by name.
- * Calls datos.gov.co Socrata API directly from the browser (CORS is open)
- * AND the backend for Supabase-saved companies — both in parallel.
+ * Sources (run in parallel):
+ *  1. Local Next.js API route (/api/companies/search) → Supabase directly (server-side)
+ *  2. Railway backend (/api/companies/search) → Supabase via backend (fallback)
+ *  3. datos.gov.co Socrata API → official registry
  */
 export async function searchRegistryCompanies(
   name: string,
@@ -27,30 +29,40 @@ export async function searchRegistryCompanies(
   // Escape single-quotes to prevent injection into the $where clause
   const safeName = name.toUpperCase().replace(/'/g, "''");
 
-  const [registryResult, savedResult] = await Promise.allSettled([
-    // ── 1. Direct browser → datos.gov.co (no deploy needed, open CORS) ──
+  const [localSavedResult, remoteSavedResult, registryResult] = await Promise.allSettled([
+    // ── 1. Local Next.js API route → Supabase (company_profiles + business_profiles) ──
+    axios.get<CompanySearchResponse>('/api/companies/search', {
+      params: { name },
+      timeout: 8_000,
+    }),
+    // ── 2. Railway backend → Supabase saved companies (fallback) ─────────────────────
+    apiClient.get<CompanySearchResponse>('/api/companies/search', {
+      params: { name, municipio, ano },
+      timeout: 8_000,
+    }),
+    // ── 3. Direct browser → datos.gov.co (no deploy needed, open CORS) ──────────────
     axios.get<Record<string, string>[]>(SOCRATA_URL, {
       params: {
         municipio: municipio.toUpperCase(),
         ano,
-        // Real field name in this dataset is razon_social_establecimiento
         '$where': `upper(razon_social_establecimiento) like '%${safeName}%'`,
         '$limit': 50,
       },
       timeout: 10_000,
-    }),
-    // ── 2. Backend → Supabase saved companies ─────────────────────────
-    apiClient.get<CompanySearchResponse>('/api/companies/search', {
-      params: { name, municipio, ano },
     }),
   ]);
 
   const results: RegistryCompanyResult[] = [];
   const savedNames = new Set<string>();
 
-  // Saved companies first (Supabase via backend)
-  if (savedResult.status === 'fulfilled') {
-    for (const r of savedResult.value.data.results ?? []) {
+  // Prefer local Next.js API results; fall back to Railway backend results
+  const savedSource =
+    localSavedResult.status === 'fulfilled' && (localSavedResult.value.data.results?.length ?? 0) > 0
+      ? localSavedResult
+      : remoteSavedResult;
+
+  if (savedSource.status === 'fulfilled') {
+    for (const r of savedSource.value.data.results ?? []) {
       if (r.source === 'saved') {
         results.push(r);
         savedNames.add(r.name.toLowerCase());
@@ -79,13 +91,26 @@ export async function searchRegistryCompanies(
 
 /**
  * Fetch a previously saved company profile from Supabase by name.
- * Returns null if not found.
+ * Tries local Next.js API route first (direct Supabase), then Railway backend.
+ * Returns null if not found in either source.
  */
 export async function getCompanyByName(name: string): Promise<CompanyProfile | null> {
+  const encoded = encodeURIComponent(name);
+
+  // Try local Next.js API route first (direct Supabase access)
   try {
-    const { data } = await apiClient.get<CompanyProfile>(
-      `/api/companies/${encodeURIComponent(name)}`,
-    );
+    const { data } = await axios.get<CompanyProfile>(`/api/companies/${encoded}`, {
+      timeout: 8_000,
+    });
+    return data;
+  } catch (localErr: unknown) {
+    if (axios.isAxiosError(localErr) && localErr.response?.status === 404) return null;
+    // Local route unavailable or error — fall through to Railway backend
+  }
+
+  // Fallback: Railway backend
+  try {
+    const { data } = await apiClient.get<CompanyProfile>(`/api/companies/${encoded}`);
     return data;
   } catch (err: unknown) {
     if (axios.isAxiosError(err) && err.response?.status === 404) return null;
