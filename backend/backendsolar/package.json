@@ -1,0 +1,44 @@
+{
+  "name": "solar-agent-backend",
+  "version": "1.0.1",
+  "description": "Agente Solar - Backend con arquitectura hexagonal para recomendaciones de energía solar en Riohacha",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "swc src -d dist --copy-files --strip-leading-paths && tsc-alias",
+    "start": "node dist/main.js",
+    "dev": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/main.ts",
+    "mcp": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/mcp/server.ts",
+    "typecheck": "node --max-old-space-size=4096 node_modules/typescript/bin/tsc --noEmit",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@supabase/supabase-js": "^2.105.4",
+    "aws4": "^1.13.2",
+    "axios": "^1.6.0",
+    "cors": "^2.8.5",
+    "docx": "^8.5.0",
+    "dotenv": "^16.3.1",
+    "exceljs": "^4.4.0",
+    "express": "^4.18.2",
+    "node-cache": "^5.1.2",
+    "node-cron": "^3.0.3",
+    "pdfkit": "^0.15.0",
+    "ws": "^8.20.1",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@swc/cli": "^0.4.0",
+    "@swc/core": "^1.15.33",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/pdfkit": "^0.13.4",
+    "@types/ws": "^8.18.1",
+    "ts-node-dev": "^2.0.0",
+    "tsc-alias": "^1.8.17",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.3.2"
+  }
+}
