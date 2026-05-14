@@ -1,32 +1,44 @@
 import cron from 'node-cron';
-import { SendDailyToAllUsersUseCase } from '../use-cases/SendDailyToAllUsersUseCase';
+import { SendDailyToAllUsersUseCase, TimeSlot } from '../use-cases/SendDailyToAllUsersUseCase';
 
 /**
- * DailySchedulerService - fires WhatsApp recommendations every morning at 7:00 AM Bogotá time.
- * Loads all users from Supabase and sends personalised recommendations to each.
- * Cron expression runs in UTC → Colombia is UTC-5, so 7:00 CO = 12:00 UTC
+ * DailySchedulerService
+ * Fires WhatsApp solar-radiation recommendations 3 times a day in Colombia time (UTC-5):
+ *   - 06:00 CO  = 11:00 UTC  → morning slot
+ *   - 12:00 CO  = 17:00 UTC  → noon slot
+ *   - 18:00 CO  = 23:00 UTC  → evening slot
  */
 export class DailySchedulerService {
-  private task: cron.ScheduledTask | null = null;
+  private tasks: cron.ScheduledTask[] = [];
 
   constructor(private readonly sendDailyToAll: SendDailyToAllUsersUseCase) {}
 
   start(): void {
-    // Every day at 12:00 UTC = 07:00 Colombia time
-    this.task = cron.schedule('0 12 * * *', async () => {
-      console.log('[DailyScheduler] Sending daily energy recommendations to all users...');
-      const result = await this.sendDailyToAll.execute();
-      if (result.isFailure) {
-        console.error('[DailyScheduler] Failed:', result.error);
-      } else {
-        console.log('[DailyScheduler] Daily recommendations sent successfully.');
-      }
-    });
-    console.log('[DailyScheduler] WhatsApp daily scheduler started (07:00 Colombia time).');
+    const schedule: Array<{ utcCron: string; slot: TimeSlot; label: string }> = [
+      { utcCron: '0 11 * * *', slot: 'morning', label: '06:00 Colombia (mañana)' },
+      { utcCron: '0 17 * * *', slot: 'noon',    label: '12:00 Colombia (mediodía)' },
+      { utcCron: '0 23 * * *', slot: 'evening', label: '18:00 Colombia (tarde-noche)' },
+    ];
+
+    for (const { utcCron, slot, label } of schedule) {
+      const task = cron.schedule(utcCron, async () => {
+        console.log(`[DailyScheduler] ▶ Enviando recomendaciones [${label}] a todos los usuarios...`);
+        const result = await this.sendDailyToAll.execute(slot);
+        if (result.isFailure) {
+          console.error(`[DailyScheduler] ✖ Error en slot ${slot}:`, result.error);
+        } else {
+          console.log(`[DailyScheduler] ✔ Recomendaciones [${label}] enviadas correctamente.`);
+        }
+      });
+      this.tasks.push(task);
+    }
+
+    console.log('[DailyScheduler] ✅ Scheduler iniciado — envíos a las 6 AM, 12 PM y 6 PM hora Colombia.');
   }
 
   stop(): void {
-    this.task?.stop();
-    console.log('[DailyScheduler] Stopped.');
+    this.tasks.forEach((t) => t.stop());
+    this.tasks = [];
+    console.log('[DailyScheduler] Detenido.');
   }
 }

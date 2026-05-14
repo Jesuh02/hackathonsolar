@@ -52,12 +52,24 @@ export class ChatWithLlmUseCase {
     try {
       const supabase = getSupabaseClient();
 
-      // 1. Load business profile (null-safe: works even without a profile)
-      const { data: profile } = await supabase
+      // 1. Load business profile for this phone; fall back to the primary registered
+      //    company so radiation/energy answers always have a real business context.
+      const { data: ownProfile } = await supabase
         .from('business_profiles')
         .select('*')
         .eq('phone', phone)
         .maybeSingle<BusinessProfile>();
+
+      let profile: BusinessProfile | null = ownProfile;
+      if (!profile) {
+        const { data: defaultProfile } = await supabase
+          .from('business_profiles')
+          .select('*')
+          .eq('daily_recommendations_enabled', true)
+          .limit(1)
+          .maybeSingle<BusinessProfile>();
+        profile = defaultProfile;
+      }
 
       // 2. Load recent conversation history BEFORE saving the new message
       const { data: historyRows } = await supabase
@@ -227,6 +239,7 @@ GUÍAS IMPORTANTES:
 - Usa siempre los datos reales de NASA POWER para los cálculos
 - Sé específico con los números: kWh, kWp, COP, años de retorno
 - Para estimar generación solar: usa η=0.80 (eficiencia del sistema) y los kWh/m²/día del NASA POWER
-- Si preguntan algo fuera del tema energético, redirige amablemente con un emoji ☀️`;
+- Si preguntan algo fuera del tema energético, redirige amablemente con un emoji ☀️
+- SIEMPRE que pregunten "¿cuál es la radiación de hoy?" o "¿cuánta energía se generó hoy?" (o preguntas equivalentes sobre generación o irradiancia del día actual), responde EXCLUSIVAMENTE en el contexto del perfil de empresa indicado arriba: usa su ubicación, consumo, tarifa y estado de paneles. Calcula la energía generada estimada como: kWh/m²/día (último valor de los datos NASA POWER) × capacidad del sistema en kWp × η=0.80. Si la empresa no tiene paneles instalados, indica el potencial teórico para un sistema dimensionado a su demanda pico.`;
   }
 }

@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { SendOtpUseCase } from '../../modules/whatsapp/application/use-cases/SendOtpUseCase';
 import { VerifyOtpUseCase } from '../../modules/whatsapp/application/use-cases/VerifyOtpUseCase';
 import { SendDailyRecommendationUseCase } from '../../modules/whatsapp/application/use-cases/SendDailyRecommendationUseCase';
-import { SendDailyToAllUsersUseCase } from '../../modules/whatsapp/application/use-cases/SendDailyToAllUsersUseCase';
+import { SendDailyToAllUsersUseCase, TimeSlot } from '../../modules/whatsapp/application/use-cases/SendDailyToAllUsersUseCase';
 import { ChatWithLlmUseCase } from '../../modules/whatsapp/application/use-cases/ChatWithLlmUseCase';
 import { WhatsAppPort } from '../../modules/whatsapp/domain/ports/WhatsAppPort';
 import { GenerateReportUseCase } from '../../modules/reports/application/use-cases/GenerateReportUseCase';
@@ -258,12 +258,15 @@ export class WhatsAppController {
       }
 
       console.log('[TriggerDailyAll] Manual trigger initiated...');
-      const result = await this.sendDailyToAll.execute();
+      const rawSlot = req.query['slot'] as string | undefined;
+      const validSlots: TimeSlot[] = ['morning', 'noon', 'evening'];
+      const timeSlot: TimeSlot = validSlots.includes(rawSlot as TimeSlot) ? (rawSlot as TimeSlot) : 'morning';
+      const result = await this.sendDailyToAll.execute(timeSlot);
       if (result.isFailure) {
         res.status(502).json({ error: result.error });
         return;
       }
-      res.json({ success: true, message: 'Recomendaciones diarias enviadas a todos los usuarios activos.' });
+      res.json({ success: true, message: `Recomendaciones [${timeSlot}] enviadas a todos los usuarios activos.` });
     } catch (error) {
       next(error);
     }

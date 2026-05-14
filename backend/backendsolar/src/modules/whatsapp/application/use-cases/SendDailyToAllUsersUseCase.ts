@@ -5,11 +5,36 @@ import { Result } from '../../../../shared/domain/Result';
 import { getSupabaseClient, BusinessProfile } from '../../../../shared/infrastructure/SupabaseClient';
 import { BusinessType } from '../../../recommendations/domain/entities/Recommendation';
 
+export type TimeSlot = 'morning' | 'noon' | 'evening';
+
+const TIME_SLOT_META: Record<TimeSlot, { label: string; emoji: string; advice: string }> = {
+  morning: {
+    label: '6:00 AM — Amanecer Solar',
+    emoji: '🌅',
+    advice:
+      '💡 *Consejo mañanero:* El sol está saliendo — activa tus paneles, reduce cargas pesadas para cuando llegue el pico solar al mediodía.',
+  },
+  noon: {
+    label: '12:00 PM — Pico Solar',
+    emoji: '🌞',
+    advice:
+      '⚡ *Consejo mediodía:* ¡Máxima radiación solar! Aprovecha ahora para cargar baterías y correr equipos de alto consumo.',
+  },
+  evening: {
+    label: '6:00 PM — Cierre Solar',
+    emoji: '🌙',
+    advice:
+      '🔋 *Consejo tarde-noche:* La radiación está bajando — cambia a almacenamiento en baterías y reduce el consumo nocturno innecesario.',
+  },
+};
+
 /**
  * SendDailyToAllUsersUseCase
  * Queries all users with daily_recommendations_enabled=true from Supabase,
  * generates personalised LLM energy recommendations for each, and sends
  * them via WhatsApp.
+ * Accepts an optional timeSlot ('morning' | 'noon' | 'evening') to tailor
+ * the message header and contextual advice for each of the 3 daily sends.
  */
 export class SendDailyToAllUsersUseCase {
   constructor(
@@ -18,7 +43,7 @@ export class SendDailyToAllUsersUseCase {
     private readonly nasaApi: NasaPowerApiPort,
   ) {}
 
-  async execute(): Promise<Result<void>> {
+  async execute(timeSlot: TimeSlot = 'morning'): Promise<Result<void>> {
     try {
       const supabase = getSupabaseClient();
       const { data: profiles, error } = await supabase
@@ -36,7 +61,7 @@ export class SendDailyToAllUsersUseCase {
       }
 
       const results = await Promise.allSettled(
-        (profiles as BusinessProfile[]).map((p) => this.sendToUser(p)),
+        (profiles as BusinessProfile[]).map((p) => this.sendToUser(p, timeSlot)),
       );
 
       const failures = results.filter((r) => r.status === 'rejected');
@@ -53,7 +78,7 @@ export class SendDailyToAllUsersUseCase {
     }
   }
 
-  private async sendToUser(profile: BusinessProfile): Promise<void> {
+  private async sendToUser(profile: BusinessProfile, timeSlot: TimeSlot): Promise<void> {
     const today = new Date();
     const fmt = (d: Date) =>
       `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
@@ -97,8 +122,9 @@ export class SendDailyToAllUsersUseCase {
     });
 
     const topRecs = rec.recommendations.slice(0, 3);
+    const meta = TIME_SLOT_META[timeSlot];
     const lines: string[] = [
-      `☀️ *Recomendaciones diarias de ahorro energético*`,
+      `${meta.emoji} *Recomendaciones de energía solar — ${meta.label}*`,
       `📅 ${dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1)}`,
       `🏪 *${profile.business_name}*`,
       `📍 ${profile.address}`,
@@ -128,6 +154,7 @@ export class SendDailyToAllUsersUseCase {
       lines.push(``, `${icon} *${i + 1}. ${r.title}*`, r.description, `➡️ ${r.action}`);
     });
 
+    lines.push(``, meta.advice);
     lines.push(``, `_Agente Solar · Riohacha, La Guajira_`);
     lines.push(`_Responde cualquier pregunta sobre energía solar 👋_`);
 

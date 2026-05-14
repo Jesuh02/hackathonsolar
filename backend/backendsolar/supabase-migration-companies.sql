@@ -1,5 +1,17 @@
--- Migration: company_profiles table
+-- Migration: company_profiles + company_energy_history tables
 -- Stores energy profile data for companies (not tied to WhatsApp phone)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- FIX: Newer Supabase projects (2024+) revoke public schema grants by default.
+-- Re-grant the minimum required privileges so PostgREST can see the tables.
+-- ─────────────────────────────────────────────────────────────────────────────
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON FUNCTIONS TO postgres, anon, authenticated, service_role;
 
 CREATE TABLE IF NOT EXISTS public.company_profiles (
   id                          uuid             NOT NULL DEFAULT gen_random_uuid(),
@@ -45,6 +57,9 @@ ALTER TABLE public.company_profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "service_role_all" ON public.company_profiles
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+-- Explicit table-level grants (required for PostgREST schema cache)
+GRANT ALL ON public.company_profiles TO service_role;
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Migration: company_energy_history table
 -- Immutable audit log — every save/update appends a new row, never overwrites.
@@ -80,3 +95,6 @@ ALTER TABLE public.company_energy_history ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "service_role_all_history" ON public.company_energy_history
   FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- Explicit table-level grants (required for PostgREST schema cache)
+GRANT ALL ON public.company_energy_history TO service_role;
